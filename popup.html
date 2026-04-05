@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CardScope</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 13px;
+            background: #0f0f17;
+            color: #e8e8f0;
+        }
+
+        .header {
+            padding: 16px 18px 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .header .version {
+            font-size: 11px;
+            color: rgba(255,255,255,0.3);
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .toggle-label {
+            font-size: 13px;
+            color: #e8e8f0;
+        }
+
+        .toggle {
+            position: relative;
+            width: 40px;
+            height: 22px;
+        }
+
+        .toggle input { display: none; }
+
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.15);
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle input:checked + .toggle-track {
+            background: #34c759;
+        }
+
+        .toggle-thumb {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+            pointer-events: none;
+        }
+
+        .toggle input:checked ~ .toggle-thumb {
+            transform: translateX(18px);
+        }
+
+        .section {
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .section-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: rgba(255,255,255,0.55);
+            margin-bottom: 4px;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select {
+            width: 100%;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 7px;
+            padding: 7px 10px;
+            color: #e8e8f0;
+            font-size: 13px;
+            outline: none;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            border-color: rgba(255,255,255,0.3);
+        }
+
+        select option {
+            background: #1a1a2e;
+        }
+
+        .condition-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            margin-bottom: 0;
+        }
+
+        .condition-btn {
+            padding: 6px 4px;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 7px;
+            color: rgba(255,255,255,0.6);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s;
+        }
+
+        .condition-btn.active {
+            background: rgba(52, 199, 89, 0.2);
+            border-color: rgba(52, 199, 89, 0.5);
+            color: #34c759;
+        }
+
+        .save-btn {
+            display: block;
+            width: calc(100% - 36px);
+            margin: 14px 18px;
+            padding: 9px;
+            background: #34c759;
+            border: none;
+            border-radius: 8px;
+            color: #000;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .save-btn:hover { background: #2fb04e; }
+
+        .status {
+            text-align: center;
+            font-size: 12px;
+            color: #34c759;
+            padding: 0 18px 14px;
+            min-height: 20px;
+        }
+
+        .status.error { color: #ff3b30; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🃏 CardScope</h1>
+        <span class="version">v1.0.0</span>
+    </div>
+
+    <div class="toggle-row">
+        <span class="toggle-label">Activer CardScope</span>
+        <label class="toggle">
+            <input type="checkbox" id="enabled" />
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+        </label>
+    </div>
+
+    <div class="section">
+        <div class="section-label">Serveur</div>
+        <label for="serverUrl">URL du serveur</label>
+        <input type="text" id="serverUrl" placeholder="http://localhost:3000" />
+        <label for="secret">Secret partagé</label>
+        <input type="password" id="secret" placeholder="cardscope-secret-key" />
+    </div>
+
+    <div class="section">
+        <div class="section-label">État de la carte</div>
+        <div class="condition-grid">
+            <button class="condition-btn" data-value="NM">NM</button>
+            <button class="condition-btn" data-value="EX">EX</button>
+            <button class="condition-btn" data-value="GD">GD</button>
+            <button class="condition-btn" data-value="PO">PO</button>
+        </div>
+    </div>
+
+    <div class="section" style="border-bottom: none;">
+        <div class="section-label">Seuil NID</div>
+        <label for="nidThresholdPct">NID si prix live ≤ <span id="thresholdDisplay">90</span>% de la cote</label>
+        <input type="number" id="nidThresholdPct" min="50" max="100" value="90" />
+    </div>
+
+    <button class="save-btn" id="save">Sauvegarder</button>
+    <div class="status" id="status"></div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
