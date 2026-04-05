@@ -4,8 +4,8 @@
  */
 
 const defaults = {
-    serverUrl: 'http://localhost:3000',
-    secret: '',
+    serverUrl: 'https://cardscope-server-production.up.railway.app',
+    secret: 'cs-live-f8x2k9mq3p7n',
     condition: 'NM',
     nidThresholdPct: 90,
     enabled: true,
