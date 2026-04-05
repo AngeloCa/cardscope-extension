@@ -28,7 +28,7 @@ async function handleIdentify({ image, condition, serverUrl, secret }) {
     // Step 1: Identify card via Claude Vision
     let identified;
     try {
-        identified = await callServer(`${serverUrl}/v1/voggt/identify`, 'POST', secret, {
+        identified = await callServer(`${serverUrl}/identify`, 'POST', secret, {
             image,
         });
     } catch (e) {
@@ -53,7 +53,7 @@ async function handleIdentify({ image, condition, serverUrl, secret }) {
     try {
         const params = new URLSearchParams({ name: cardName, game, condition });
         if (set) params.set('set', set);
-        priceData = await callServer(`${serverUrl}/v1/voggt/price?${params}`, 'GET', secret);
+        priceData = await callServer(`${serverUrl}/price?${params}`, 'GET', secret);
     } catch (e) {
         // Return card info even if price fetch fails
         return { detected: true, cardName, game, set, cardNumber, priceError: e.message };
