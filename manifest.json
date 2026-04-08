@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "CardScope",
     "version": "1.0.0",
-    "description": "Détecte les cartes vendues sur Voggt et Whatnot et affiche leur cote JustTCG en temps réel.",
+    "description": "Détecte les cartes TCG sur les lives (Voggt, Whatnot, Twitch, YouTube…) et affiche leur cote JustTCG en temps réel.",
     "permissions": [
         "storage",
         "activeTab",
@@ -11,6 +11,17 @@
     "host_permissions": [
         "https://voggt.com/*",
         "https://www.whatnot.com/*",
+        "https://loupe.com/*",
+        "https://www.fanatics.com/*",
+        "https://fanaticslive.com/*",
+        "https://streamseller.com/*",
+        "https://www.ebay.com/*",
+        "https://www.ebay.fr/*",
+        "https://www.twitch.tv/*",
+        "https://www.youtube.com/*",
+        "https://www.tiktok.com/*",
+        "https://www.facebook.com/*",
+        "https://www.instagram.com/*",
         "http://localhost:*/*",
         "https://*.happy.engineering/*"
     ],
@@ -21,7 +32,18 @@
         {
             "matches": [
                 "https://voggt.com/*",
-                "https://www.whatnot.com/*"
+                "https://www.whatnot.com/*",
+                "https://loupe.com/*",
+                "https://www.fanatics.com/*",
+                "https://fanaticslive.com/*",
+                "https://streamseller.com/*",
+                "https://www.ebay.com/live*",
+                "https://www.ebay.fr/live*",
+                "https://www.twitch.tv/*",
+                "https://www.youtube.com/*",
+                "https://www.tiktok.com/*",
+                "https://www.facebook.com/*",
+                "https://www.instagram.com/*"
             ],
             "js": ["content.js"],
             "css": ["styles.css"],
