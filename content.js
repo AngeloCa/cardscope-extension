@@ -148,12 +148,14 @@ function renderResult(data, condition) {
         return;
     }
 
-    const { cardName, set, cardNumber, trendPrice, lowPrice, currency, justtcgUrl } = data;
+    const { cardName, set, cardNumber, trendPrice, lowPrice, currency, justtcgUrl, language } = data;
     const symbol = currency === 'EUR' ? '€' : (currency || '€');
     const metaParts = [set, cardNumber ? `#${cardNumber}` : null].filter(Boolean);
+    const langBadge = language && language !== 'EN'
+        ? `<span class="cardscope-lang-badge">${escapeHtml(language)}</span>` : '';
 
     document.getElementById('cs-body').innerHTML = `
-        <div class="cardscope-card-name">${escapeHtml(cardName)}</div>
+        <div class="cardscope-card-name">${escapeHtml(cardName)}${langBadge}</div>
         ${metaParts.length ? `<div class="cardscope-card-meta">${escapeHtml(metaParts.join(' • '))}</div>` : ''}
         ${trendPrice != null ? `
         <div class="cardscope-prices">

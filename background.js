@@ -43,10 +43,10 @@ async function handleIdentify({ image, condition, serverUrl, secret, force }) {
         return { detected: false };
     }
 
-    const { cardName, game, set, cardNumber } = identified;
+    const { cardName, game, set, cardNumber, language } = identified;
 
     // Step 2: Check memory cache (skip if forced)
-    const cacheKey = `${game}:${cardName}:${condition}`.toLowerCase();
+    const cacheKey = `${game}:${cardName}:${condition}:${language ?? 'EN'}`.toLowerCase();
     if (!force) {
         const cached = cardCache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now()) {
@@ -54,10 +54,10 @@ async function handleIdentify({ image, condition, serverUrl, secret, force }) {
         }
     }
 
-    // Step 3: Fetch price from Cardmarket via server
+    // Step 3: Fetch price from JustTCG via server
     let priceData;
     try {
-        const params = new URLSearchParams({ name: cardName, game, condition });
+        const params = new URLSearchParams({ name: cardName, game, condition, language: language ?? 'EN' });
         if (set) params.set('set', set);
         priceData = await callServer(`${serverUrl}/price?${params}`, 'GET', secret);
     } catch (e) {
@@ -71,6 +71,7 @@ async function handleIdentify({ image, condition, serverUrl, secret, force }) {
         game,
         set,
         cardNumber,
+        language: language ?? 'EN',
         trendPrice: priceData.trendPrice,
         lowPrice: priceData.lowPrice,
         condition: priceData.condition,

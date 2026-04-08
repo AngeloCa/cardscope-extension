@@ -64,6 +64,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cardscope-lang-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(255, 214, 10, 0.2);
+    border: 1px solid rgba(255, 214, 10, 0.4);
+    color: #ffd60a;
+    border-radius: 3px;
+    padding: 1px 4px;
+    letter-spacing: 0.05em;
 }
 
 .cardscope-card-meta {
