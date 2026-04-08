@@ -196,23 +196,42 @@
     50% { opacity: 0.3; }
 }
 
-/* "Pas ma carte" rescan button */
-.cardscope-rescan-btn {
-    display: block;
-    width: 100%;
+/* Action buttons row */
+.cardscope-actions {
+    display: flex;
+    gap: 6px;
     margin-top: 10px;
+}
+
+.cardscope-btn {
+    flex: 1;
     padding: 5px 0;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 6px;
-    color: rgba(255, 255, 255, 0.45);
     font-size: 11px;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
     user-select: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.cardscope-rescan-btn:hover {
+.cardscope-btn-quote {
+    background: rgba(52, 199, 89, 0.15);
+    border-color: rgba(52, 199, 89, 0.3);
+    color: rgba(52, 199, 89, 0.8);
+    font-weight: 600;
+}
+
+.cardscope-btn-quote:hover {
+    background: rgba(52, 199, 89, 0.28);
+    color: #34c759;
+}
+
+.cardscope-btn-rescan {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.cardscope-btn-rescan:hover {
     background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.75);
 }

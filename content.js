@@ -61,27 +61,35 @@ function createOverlay() {
         <div id="cs-body">
             <div class="cardscope-idle">🃏 En attente d'une carte…</div>
         </div>
-        <button class="cardscope-rescan-btn" id="cs-rescan" title="Forcer un nouveau scan">
-            🔄 Pas ma carte
-        </button>
+        <div class="cardscope-actions">
+            <button class="cardscope-btn cardscope-btn-quote" id="cs-quote" title="Obtenir la cote maintenant">
+                💰 Cotation
+            </button>
+            <button class="cardscope-btn cardscope-btn-rescan" id="cs-rescan" title="Ignorer cette carte">
+                🔄 Pas ma carte
+            </button>
+        </div>
     `;
 
-    // "Pas ma carte" button — reset cooldown without triggering drag
+    // "Cotation" button — immediate scan, bypass all throttling
+    el.querySelector('#cs-quote').addEventListener('mousedown', (e) => e.stopPropagation());
+    el.querySelector('#cs-quote').addEventListener('click', (e) => {
+        e.stopPropagation();
+        triggerManualScan(false); // force scan, keep blacklist
+    });
+
+    // "Pas ma carte" button — blacklist + force new scan
     el.querySelector('#cs-rescan').addEventListener('mousedown', (e) => e.stopPropagation());
     el.querySelector('#cs-rescan').addEventListener('click', (e) => {
         e.stopPropagation();
-        // Blacklist current card for 60s so it won't come back immediately
         if (lastCardName) {
             blacklistedCard = lastCardName;
             blacklistUntil = Date.now() + 60_000;
         }
-        forceNextScan = true;
-        lastApiCallAt = 0;
-        lastFramePixels = null;
         lastCardName = null;
         hasCurrentResult = false;
         renderIdle(null);
-        showScanDot(true);
+        triggerManualScan(true); // force scan + bypass blacklist
     });
 
     makeDraggable(el);
@@ -290,6 +298,63 @@ function frameDiff(prev, curr) {
         if (dr + dg + db > 30) changed++;
     }
     return changed / total;
+}
+
+// ─── Manual scan trigger ──────────────────────────────────────────────────────
+
+// bypassBlacklist=true for "Pas ma carte" (fresh start), false for "Cotation" (same card ok)
+async function triggerManualScan(bypassBlacklist = false) {
+    if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) return;
+
+    const settings = await getSettings();
+    if (!settings.enabled) return;
+
+    // Reset throttling flags
+    lastApiCallAt = 0;
+    lastFramePixels = null;
+    forceNextScan = true;
+    if (bypassBlacklist) {
+        blacklistedCard = null;
+        blacklistUntil = 0;
+    }
+
+    showScanDot(true);
+    if (!hasCurrentResult) renderLoading(settings.condition);
+
+    let frame;
+    try {
+        frame = captureFrame(videoEl);
+    } catch (e) {
+        renderError('Impossible de capturer la vidéo');
+        return;
+    }
+
+    lastFramePixels = samplePixels(frame.ctx, frame.canvas.width, frame.canvas.height);
+    lastApiCallAt = Date.now();
+    forceNextScan = false;
+
+    chrome.runtime.sendMessage(
+        {
+            type: 'CARDSCOPE_IDENTIFY',
+            image: frame.base64,
+            condition: settings.condition,
+            serverUrl: settings.serverUrl,
+            secret: settings.secret,
+            force: true,
+        },
+        (response) => {
+            if (chrome.runtime.lastError || !response || response.error) {
+                renderError(response?.error || 'Erreur serveur');
+                return;
+            }
+            if (!response.detected) {
+                renderIdle(settings.condition);
+                return;
+            }
+            lastCardName = response.cardName || null;
+            renderResult(response, settings.condition);
+        }
+    );
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────────────
