@@ -27,6 +27,7 @@ let hasCurrentResult = false;   // true once we have at least one result showing
 let forceNextScan = false;      // set by "Pas ma carte" button
 let blacklistedCard = null;     // card name to ignore after "Pas ma carte"
 let blacklistUntil = 0;         // timestamp until blacklist expires
+let apiCallInProgress = false;  // prevent concurrent requests
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -216,49 +217,10 @@ function makeDraggable(el) {
 }
 
 // ─── Voggt DOM listing extraction ─────────────────────────────────────────────
-
-/**
- * Try to extract card name from Voggt's listing DOM.
- * Returns { cardName } or null if not found.
- * This avoids OCR when the info is already on the page.
- */
+// NOTE: disabled — Voggt UI text (navigation, headers) caused false positives.
+// OCR via Claude Vision is more reliable. Re-enable once Voggt's exact selectors
+// are confirmed by inspecting a live page.
 function extractVoggtListing() {
-    // Selectors Voggt uses for the current item title (inspect & refine as needed)
-    const candidateSelectors = [
-        '[data-testid*="lot-title"]',
-        '[data-testid*="item-title"]',
-        '[data-testid*="product-title"]',
-        '[class*="LotTitle"]',
-        '[class*="ItemTitle"]',
-        '[class*="ProductName"]',
-        '[class*="lot-title"]',
-        '[class*="item-title"]',
-        '[class*="current-item"]',
-        '[class*="currentItem"]',
-        '[class*="article-name"]',
-        '[class*="articleName"]',
-    ];
-
-    for (const sel of candidateSelectors) {
-        const el = document.querySelector(sel);
-        if (el) {
-            const text = el.textContent?.trim();
-            if (text && text.length > 3 && text.length < 120) {
-                return { cardName: text };
-            }
-        }
-    }
-
-    // Fallback: look for an h2/h3 near the video that looks like a card name
-    const headings = document.querySelectorAll('h2, h3');
-    for (const h of headings) {
-        const text = h.textContent?.trim();
-        // Card names are typically 5-80 chars and contain letters
-        if (text && text.length >= 5 && text.length <= 80 && /[a-zA-ZÀ-ÿ]/.test(text)) {
-            return { cardName: text };
-        }
-    }
-
     return null;
 }
 
@@ -318,6 +280,8 @@ async function triggerManualScan(bypassBlacklist = false) {
         blacklistUntil = 0;
     }
 
+    if (apiCallInProgress) return;
+
     showScanDot(true);
     if (!hasCurrentResult) renderLoading(settings.condition);
 
@@ -332,6 +296,7 @@ async function triggerManualScan(bypassBlacklist = false) {
     lastFramePixels = samplePixels(frame.ctx, frame.canvas.width, frame.canvas.height);
     lastApiCallAt = Date.now();
     forceNextScan = false;
+    apiCallInProgress = true;
 
     chrome.runtime.sendMessage(
         {
@@ -343,6 +308,7 @@ async function triggerManualScan(bypassBlacklist = false) {
             force: true,
         },
         (response) => {
+            apiCallInProgress = false;
             if (chrome.runtime.lastError || !response || response.error) {
                 renderError(response?.error || 'Erreur serveur');
                 return;
@@ -363,6 +329,7 @@ async function runCaptureLoop() {
     const settings = await getSettings();
     if (!settings.enabled) return;
     if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) return;
+    if (apiCallInProgress) return; // already waiting for a response
 
     const now = Date.now();
     const cooldownOk = forceNextScan || (now - lastApiCallAt >= MIN_API_INTERVAL_MS);
@@ -417,6 +384,7 @@ async function runCaptureLoop() {
 
     // ── Strategy 2: OCR via Claude Vision ────────────────────────────────────
     const isForced = forceNextScan;
+    apiCallInProgress = true;
     chrome.runtime.sendMessage(
         {
             type: 'CARDSCOPE_IDENTIFY',
@@ -427,6 +395,7 @@ async function runCaptureLoop() {
             force: isForced,
         },
         (response) => {
+            apiCallInProgress = false;
             if (chrome.runtime.lastError) {
                 renderError('Erreur connexion serveur');
                 return;
