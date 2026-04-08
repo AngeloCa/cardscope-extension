@@ -250,3 +250,45 @@
     background: rgba(255, 255, 255, 0.12);
     color: rgba(255, 255, 255, 0.75);
 }
+
+/* Language selector */
+.cardscope-lang-selector {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.cardscope-lang-btn {
+    flex: 1;
+    padding: 3px 0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+    letter-spacing: 0.04em;
+}
+
+.cardscope-lang-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.cardscope-lang-btn.active {
+    background: rgba(255, 214, 10, 0.2);
+    border-color: rgba(255, 214, 10, 0.5);
+    color: #ffd60a;
+}
+
+/* PSA 10 link */
+.cardscope-psa-link {
+    color: rgba(100, 180, 255, 0.6);
+}
+
+.cardscope-psa-link:hover {
+    color: rgba(100, 180, 255, 0.9);
+}

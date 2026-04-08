@@ -28,6 +28,7 @@ let forceNextScan = false;      // set by "Pas ma carte" button
 let blacklistedCard = null;     // card name to ignore after "Pas ma carte"
 let blacklistUntil = 0;         // timestamp until blacklist expires
 let apiCallInProgress = false;  // prevent concurrent requests
+let currentCardData = null; // stores last detected card for re-pricing
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ function renderIdle(condition) {
         <div class="cardscope-idle">🃏 En attente d'une carte…</div>
     `;
     hasCurrentResult = false;
+    currentCardData = null;
     showScanDot(false);
 }
 
@@ -154,9 +156,17 @@ function renderResult(data, condition) {
     const langBadge = language && language !== 'EN'
         ? `<span class="cardscope-lang-badge">${escapeHtml(language)}</span>` : '';
 
+    const LANG_OPTIONS = ['EN', 'JP', 'FR', 'KR', 'DE'];
+    const activeLang = language || 'EN';
+
+    currentCardData = data; // save for re-pricing
+
     document.getElementById('cs-body').innerHTML = `
         <div class="cardscope-card-name">${escapeHtml(cardName)}${langBadge}</div>
         ${metaParts.length ? `<div class="cardscope-card-meta">${escapeHtml(metaParts.join(' • '))}</div>` : ''}
+        <div class="cardscope-lang-selector">
+            ${LANG_OPTIONS.map(l => `<button class="cardscope-lang-btn${l === activeLang ? ' active' : ''}" data-lang="${l}">${l}</button>`).join('')}
+        </div>
         ${trendPrice != null ? `
         <div class="cardscope-prices">
             <div class="cardscope-price-block">
@@ -169,9 +179,37 @@ function renderResult(data, condition) {
             </div>
         </div>
         ${justtcgUrl ? `<a class="cardscope-link" href="${justtcgUrl}" target="_blank">Voir sur JustTCG ↗</a>` : ''}
+        <a class="cardscope-link cardscope-psa-link" href="https://www.ebay.fr/sch/i.html?_nkw=${encodeURIComponent('PSA 10 ' + cardName)}&LH_Complete=1&LH_Sold=1&_sop=13" target="_blank">📊 Prix PSA 10 ↗</a>
         ` : `<div class="cardscope-idle">Prix non disponible pour ce jeu</div>`}
     `;
     hasCurrentResult = true;
+
+    // Language button click handlers
+    document.querySelectorAll('.cardscope-lang-btn').forEach(btn => {
+        btn.addEventListener('mousedown', e => e.stopPropagation());
+        btn.addEventListener('click', async e => {
+            e.stopPropagation();
+            const newLang = btn.dataset.lang;
+            if (!currentCardData || newLang === activeLang) return;
+            const settings = await getSettings();
+            showScanDot(true);
+            chrome.runtime.sendMessage({
+                type: 'CARDSCOPE_REPRICE',
+                cardName: currentCardData.cardName,
+                game: currentCardData.game,
+                set: currentCardData.set,
+                cardNumber: currentCardData.cardNumber,
+                language: newLang,
+                condition: settings.condition,
+                serverUrl: settings.serverUrl,
+                secret: settings.secret,
+            }, response => {
+                showScanDot(false);
+                if (!response || response.error) return;
+                renderResult({ ...currentCardData, ...response, language: newLang }, settings.condition);
+            });
+        });
+    });
 }
 
 function renderError(msg) {

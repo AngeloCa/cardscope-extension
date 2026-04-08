@@ -21,6 +21,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         return true;
     }
+    if (message.type === 'CARDSCOPE_REPRICE') {
+        handleReprice(message).then(sendResponse).catch(err => {
+            sendResponse({ error: err.message });
+        });
+        return true;
+    }
 });
 
 async function handleIdentify({ image, condition, serverUrl, secret, force }) {
@@ -107,6 +113,23 @@ async function handlePriceOnly({ cardName, condition, serverUrl, secret }) {
     };
     cardCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
     return result;
+}
+
+async function handleReprice({ cardName, game, set, cardNumber, language, condition, serverUrl, secret }) {
+    if (!secret || !serverUrl) return { error: 'Config manquante' };
+    const params = new URLSearchParams({ name: cardName, game, condition, language: language ?? 'EN' });
+    if (set) params.set('set', set);
+    if (cardNumber) params.set('cardNumber', cardNumber);
+    const priceData = await callServer(`${serverUrl}/price?${params}`, 'GET', secret);
+    return {
+        trendPrice: priceData.trendPrice,
+        lowPrice: priceData.lowPrice,
+        condition: priceData.condition,
+        currency: priceData.currency,
+        justtcgUrl: priceData.justtcgUrl,
+        set: priceData.setName,
+        cardNumber: priceData.cardNumber,
+    };
 }
 
 async function callServer(url, method, secret, body) {
