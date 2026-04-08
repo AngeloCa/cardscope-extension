@@ -6,9 +6,12 @@
  * and renders the overlay badge on top of the video.
  */
 
-const CAPTURE_INTERVAL_MS = 3000;
+const CAPTURE_INTERVAL_MS = 2000;   // how often we CHECK for visual change
+const MIN_API_INTERVAL_MS = 12000;  // min time between actual API calls
 const JPEG_QUALITY = 0.6;
 const MAX_FRAME_WIDTH = 640; // resize before sending to reduce payload
+const DIFF_SAMPLE_SIZE = 32;        // sample grid for frame diff (32×32 = 1024 points)
+const DIFF_THRESHOLD = 0.08;        // 8% of pixels must change to trigger API call
 
 let overlayEl = null;
 let videoEl = null;
@@ -18,6 +21,8 @@ let isEnabled = true;
 let isDragging = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+let lastFramePixels = null;         // sampled pixel data of last API-triggering frame
+let lastApiCallAt = 0;              // timestamp of last API call
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -177,8 +182,35 @@ function captureFrame(video) {
     canvas.height = Math.round(video.videoHeight * scale);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    // Return base64 JPEG without the data: prefix
-    return canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1];
+    return { canvas, ctx, base64: canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1] };
+}
+
+// Sample a grid of pixels from the canvas for cheap visual diff
+function samplePixels(ctx, w, h) {
+    const pixels = [];
+    for (let i = 0; i < DIFF_SAMPLE_SIZE; i++) {
+        for (let j = 0; j < DIFF_SAMPLE_SIZE; j++) {
+            const x = Math.floor((i / DIFF_SAMPLE_SIZE) * w);
+            const y = Math.floor((j / DIFF_SAMPLE_SIZE) * h);
+            const d = ctx.getImageData(x, y, 1, 1).data;
+            pixels.push(d[0], d[1], d[2]); // R, G, B
+        }
+    }
+    return pixels;
+}
+
+// Returns fraction of sampled pixels that changed significantly
+function frameDiff(prev, curr) {
+    if (!prev || prev.length !== curr.length) return 1;
+    let changed = 0;
+    const total = curr.length / 3;
+    for (let i = 0; i < curr.length; i += 3) {
+        const dr = Math.abs(curr[i] - prev[i]);
+        const dg = Math.abs(curr[i + 1] - prev[i + 1]);
+        const db = Math.abs(curr[i + 2] - prev[i + 2]);
+        if (dr + dg + db > 30) changed++; // ~10/255 per channel
+    }
+    return changed / total;
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────────────
@@ -189,19 +221,31 @@ async function runCaptureLoop() {
 
     if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) return;
 
-    let frameBase64;
+    // Rate limit: don't call API more often than MIN_API_INTERVAL_MS
+    const now = Date.now();
+    if (now - lastApiCallAt < MIN_API_INTERVAL_MS) return;
+
+    let frame;
     try {
-        frameBase64 = captureFrame(videoEl);
+        frame = captureFrame(videoEl);
     } catch (e) {
         return; // cross-origin or video not ready
     }
+
+    // Visual diff: skip API call if frame hasn't changed enough
+    const currentPixels = samplePixels(frame.ctx, frame.canvas.width, frame.canvas.height);
+    const diff = frameDiff(lastFramePixels, currentPixels);
+    if (diff < DIFF_THRESHOLD) return; // scene unchanged, skip
+
+    lastFramePixels = currentPixels;
+    lastApiCallAt = now;
 
     renderLoading(settings.condition);
 
     chrome.runtime.sendMessage(
         {
             type: 'CARDSCOPE_IDENTIFY',
-            image: frameBase64,
+            image: frame.base64,
             condition: settings.condition,
             serverUrl: settings.serverUrl,
             secret: settings.secret,
@@ -215,7 +259,6 @@ async function runCaptureLoop() {
                 renderError(response?.error || 'Erreur inconnue');
                 return;
             }
-            // Avoid re-fetching price if same card
             if (response.cardName && response.cardName === lastCardName && response.cached) {
                 return;
             }
@@ -223,6 +266,38 @@ async function runCaptureLoop() {
             renderResult(response, settings.condition, settings.nidThresholdPct);
         }
     );
+}
+
+// ─── Voggt DOM trigger — detect new listing events ────────────────────────────
+
+function watchVoggtListings() {
+    // Reset the API cooldown when Voggt signals a new lot/listing
+    // Voggt uses React so we watch for DOM changes in the listing area
+    const listingObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType !== 1) continue;
+                // Detect Voggt listing signals: price elements, lot numbers, countdown timers
+                const text = node.textContent || '';
+                const isListingChange =
+                    node.querySelector?.('[class*="lot"]') ||
+                    node.querySelector?.('[class*="price"]') ||
+                    node.querySelector?.('[class*="timer"]') ||
+                    node.querySelector?.('[class*="countdown"]') ||
+                    node.querySelector?.('[class*="current"]') ||
+                    /^\d+[,.]?\d*\s*€/.test(text.trim()); // price pattern like "12,50 €"
+
+                if (isListingChange) {
+                    // New listing detected — force next capture to bypass cooldown
+                    lastApiCallAt = 0;
+                    lastFramePixels = null;
+                    break;
+                }
+            }
+        }
+    });
+
+    listingObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 // ─── Video element discovery ──────────────────────────────────────────────────
@@ -268,6 +343,9 @@ observer.observe(document.body, { childList: true, subtree: true });
 
 // Initial attempt
 startCapture();
+
+// Watch Voggt DOM for new listing events
+watchVoggtListings();
 
 // Retry a few times in case the video loads after the script
 let retries = 0;
