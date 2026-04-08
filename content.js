@@ -25,6 +25,8 @@ let lastFramePixels = null;
 let lastApiCallAt = 0;
 let hasCurrentResult = false;   // true once we have at least one result showing
 let forceNextScan = false;      // set by "Pas ma carte" button
+let blacklistedCard = null;     // card name to ignore after "Pas ma carte"
+let blacklistUntil = 0;         // timestamp until blacklist expires
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -68,11 +70,17 @@ function createOverlay() {
     el.querySelector('#cs-rescan').addEventListener('mousedown', (e) => e.stopPropagation());
     el.querySelector('#cs-rescan').addEventListener('click', (e) => {
         e.stopPropagation();
+        // Blacklist current card for 60s so it won't come back immediately
+        if (lastCardName) {
+            blacklistedCard = lastCardName;
+            blacklistUntil = Date.now() + 60_000;
+        }
         forceNextScan = true;
         lastApiCallAt = 0;
         lastFramePixels = null;
         lastCardName = null;
         hasCurrentResult = false;
+        renderIdle(null);
         showScanDot(true);
     });
 
@@ -343,6 +351,7 @@ async function runCaptureLoop() {
     }
 
     // ── Strategy 2: OCR via Claude Vision ────────────────────────────────────
+    const isForced = forceNextScan;
     chrome.runtime.sendMessage(
         {
             type: 'CARDSCOPE_IDENTIFY',
@@ -350,6 +359,7 @@ async function runCaptureLoop() {
             condition: settings.condition,
             serverUrl: settings.serverUrl,
             secret: settings.secret,
+            force: isForced,
         },
         (response) => {
             if (chrome.runtime.lastError) {
@@ -357,13 +367,18 @@ async function runCaptureLoop() {
                 return;
             }
             if (!response || response.error) {
-                if (hasCurrentResult) showScanDot(false); // keep old result visible
+                if (hasCurrentResult) showScanDot(false);
                 else renderError(response?.error || 'Erreur inconnue');
                 return;
             }
             if (!response.detected) {
                 if (!hasCurrentResult) renderIdle(settings.condition);
-                else showScanDot(false); // keep old result
+                else showScanDot(false);
+                return;
+            }
+            // Ignore blacklisted card for 60s after "Pas ma carte"
+            if (response.cardName === blacklistedCard && Date.now() < blacklistUntil) {
+                showScanDot(false);
                 return;
             }
             if (response.cardName === lastCardName && response.cached) {

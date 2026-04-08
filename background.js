@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-async function handleIdentify({ image, condition, serverUrl, secret }) {
+async function handleIdentify({ image, condition, serverUrl, secret, force }) {
     if (!secret) {
         return { error: 'Secret manquant — configure CardScope dans le popup' };
     }
@@ -34,9 +34,7 @@ async function handleIdentify({ image, condition, serverUrl, secret }) {
     // Step 1: Identify card via Claude Vision
     let identified;
     try {
-        identified = await callServer(`${serverUrl}/identify`, 'POST', secret, {
-            image,
-        });
+        identified = await callServer(`${serverUrl}/identify`, 'POST', secret, { image });
     } catch (e) {
         return { error: `Identification échouée: ${e.message}` };
     }
@@ -47,11 +45,13 @@ async function handleIdentify({ image, condition, serverUrl, secret }) {
 
     const { cardName, game, set, cardNumber } = identified;
 
-    // Step 2: Check memory cache
+    // Step 2: Check memory cache (skip if forced)
     const cacheKey = `${game}:${cardName}:${condition}`.toLowerCase();
-    const cached = cardCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-        return { ...cached.result, cached: true };
+    if (!force) {
+        const cached = cardCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+            return { ...cached.result, cached: true };
+        }
     }
 
     // Step 3: Fetch price from Cardmarket via server
