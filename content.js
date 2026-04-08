@@ -1,7 +1,7 @@
 /**
  * CardScope — content.js
  * Injected on voggt.com pages.
- * Finds the <video> element, captures frames every 3s,
+ * Finds the <video> element, captures frames when the scene changes,
  * sends them to the background service worker for card detection + price lookup,
  * and renders the overlay badge on top of the video.
  */
@@ -9,8 +9,8 @@
 const CAPTURE_INTERVAL_MS = 2000;   // how often we CHECK for visual change
 const MIN_API_INTERVAL_MS = 12000;  // min time between actual API calls
 const JPEG_QUALITY = 0.6;
-const MAX_FRAME_WIDTH = 640; // resize before sending to reduce payload
-const DIFF_SAMPLE_SIZE = 32;        // sample grid for frame diff (32×32 = 1024 points)
+const MAX_FRAME_WIDTH = 640;
+const DIFF_SAMPLE_SIZE = 32;        // 32×32 sample grid = 1024 points
 const DIFF_THRESHOLD = 0.08;        // 8% of pixels must change to trigger API call
 
 let overlayEl = null;
@@ -21,8 +21,10 @@ let isEnabled = true;
 let isDragging = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
-let lastFramePixels = null;         // sampled pixel data of last API-triggering frame
-let lastApiCallAt = 0;              // timestamp of last API call
+let lastFramePixels = null;
+let lastApiCallAt = 0;
+let hasCurrentResult = false;   // true once we have at least one result showing
+let forceNextScan = false;      // set by "Pas ma carte" button
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -30,7 +32,7 @@ async function getSettings() {
     return new Promise((resolve) => {
         chrome.storage.sync.get(
             {
-                serverUrl: 'http://localhost:3000',
+                serverUrl: 'https://cardscope-server-production.up.railway.app',
                 secret: '',
                 condition: 'NM',
                 nidThresholdPct: 90,
@@ -49,12 +51,31 @@ function createOverlay() {
     el.innerHTML = `
         <div class="cardscope-header">
             <span class="cardscope-logo">CardScope</span>
-            <span class="cardscope-condition" id="cs-condition">NM</span>
+            <div class="cardscope-header-right">
+                <span class="cardscope-scan-dot" id="cs-scan-dot" title="Scan en cours…"></span>
+                <span class="cardscope-condition" id="cs-condition">NM</span>
+            </div>
         </div>
         <div id="cs-body">
             <div class="cardscope-idle">🃏 En attente d'une carte…</div>
         </div>
+        <button class="cardscope-rescan-btn" id="cs-rescan" title="Forcer un nouveau scan">
+            🔄 Pas ma carte
+        </button>
     `;
+
+    // "Pas ma carte" button — reset cooldown without triggering drag
+    el.querySelector('#cs-rescan').addEventListener('mousedown', (e) => e.stopPropagation());
+    el.querySelector('#cs-rescan').addEventListener('click', (e) => {
+        e.stopPropagation();
+        forceNextScan = true;
+        lastApiCallAt = 0;
+        lastFramePixels = null;
+        lastCardName = null;
+        hasCurrentResult = false;
+        showScanDot(true);
+    });
+
     makeDraggable(el);
     return el;
 }
@@ -72,7 +93,14 @@ function attachOverlayToVideo(video) {
     container.appendChild(overlayEl);
 }
 
+function showScanDot(visible) {
+    const dot = document.getElementById('cs-scan-dot');
+    if (dot) dot.classList.toggle('active', visible);
+}
+
+// Full loading — only used when no result is currently shown
 function renderLoading(condition) {
+    if (!document.getElementById('cs-condition')) return;
     document.getElementById('cs-condition').textContent = condition;
     document.getElementById('cs-body').innerHTML = `
         <div class="cardscope-loading">
@@ -80,17 +108,23 @@ function renderLoading(condition) {
             Analyse en cours…
         </div>
     `;
+    showScanDot(true);
 }
 
 function renderIdle(condition) {
+    if (!document.getElementById('cs-condition')) return;
     document.getElementById('cs-condition').textContent = condition;
     document.getElementById('cs-body').innerHTML = `
         <div class="cardscope-idle">🃏 En attente d'une carte…</div>
     `;
+    hasCurrentResult = false;
+    showScanDot(false);
 }
 
-function renderResult(data, condition, nidThresholdPct) {
+function renderResult(data, condition) {
+    if (!document.getElementById('cs-condition')) return;
     document.getElementById('cs-condition').textContent = condition;
+    showScanDot(false);
 
     if (!data || !data.detected) {
         renderIdle(condition);
@@ -98,17 +132,8 @@ function renderResult(data, condition, nidThresholdPct) {
     }
 
     const { cardName, set, cardNumber, trendPrice, lowPrice, currency, justtcgUrl } = data;
-    const symbol = currency === 'EUR' ? '€' : currency;
+    const symbol = currency === 'EUR' ? '€' : (currency || '€');
     const metaParts = [set, cardNumber ? `#${cardNumber}` : null].filter(Boolean);
-
-    let verdictHtml = '';
-    if (trendPrice != null) {
-        verdictHtml = `
-            <div class="cardscope-verdict unknown" id="cs-verdict">
-                Renseigne le prix live pour le verdict
-            </div>
-        `;
-    }
 
     document.getElementById('cs-body').innerHTML = `
         <div class="cardscope-card-name">${escapeHtml(cardName)}</div>
@@ -124,10 +149,10 @@ function renderResult(data, condition, nidThresholdPct) {
                 <div class="cardscope-price-value">${lowPrice != null ? lowPrice.toFixed(2) + ' ' + symbol : '—'}</div>
             </div>
         </div>
-        ${verdictHtml}
         ${justtcgUrl ? `<a class="cardscope-link" href="${justtcgUrl}" target="_blank">Voir sur JustTCG ↗</a>` : ''}
-        ` : `<div class="cardscope-idle">Prix non disponible</div>`}
+        ` : `<div class="cardscope-idle">Prix non disponible pour ce jeu</div>`}
     `;
+    hasCurrentResult = true;
 }
 
 function renderError(msg) {
@@ -135,6 +160,7 @@ function renderError(msg) {
     document.getElementById('cs-body').innerHTML = `
         <div class="cardscope-idle">⚠️ ${escapeHtml(msg)}</div>
     `;
+    showScanDot(false);
 }
 
 function escapeHtml(str) {
@@ -173,6 +199,53 @@ function makeDraggable(el) {
     });
 }
 
+// ─── Voggt DOM listing extraction ─────────────────────────────────────────────
+
+/**
+ * Try to extract card name from Voggt's listing DOM.
+ * Returns { cardName } or null if not found.
+ * This avoids OCR when the info is already on the page.
+ */
+function extractVoggtListing() {
+    // Selectors Voggt uses for the current item title (inspect & refine as needed)
+    const candidateSelectors = [
+        '[data-testid*="lot-title"]',
+        '[data-testid*="item-title"]',
+        '[data-testid*="product-title"]',
+        '[class*="LotTitle"]',
+        '[class*="ItemTitle"]',
+        '[class*="ProductName"]',
+        '[class*="lot-title"]',
+        '[class*="item-title"]',
+        '[class*="current-item"]',
+        '[class*="currentItem"]',
+        '[class*="article-name"]',
+        '[class*="articleName"]',
+    ];
+
+    for (const sel of candidateSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+            const text = el.textContent?.trim();
+            if (text && text.length > 3 && text.length < 120) {
+                return { cardName: text };
+            }
+        }
+    }
+
+    // Fallback: look for an h2/h3 near the video that looks like a card name
+    const headings = document.querySelectorAll('h2, h3');
+    for (const h of headings) {
+        const text = h.textContent?.trim();
+        // Card names are typically 5-80 chars and contain letters
+        if (text && text.length >= 5 && text.length <= 80 && /[a-zA-ZÀ-ÿ]/.test(text)) {
+            return { cardName: text };
+        }
+    }
+
+    return null;
+}
+
 // ─── Video frame capture ──────────────────────────────────────────────────────
 
 function captureFrame(video) {
@@ -185,7 +258,6 @@ function captureFrame(video) {
     return { canvas, ctx, base64: canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1] };
 }
 
-// Sample a grid of pixels from the canvas for cheap visual diff
 function samplePixels(ctx, w, h) {
     const pixels = [];
     for (let i = 0; i < DIFF_SAMPLE_SIZE; i++) {
@@ -193,13 +265,12 @@ function samplePixels(ctx, w, h) {
             const x = Math.floor((i / DIFF_SAMPLE_SIZE) * w);
             const y = Math.floor((j / DIFF_SAMPLE_SIZE) * h);
             const d = ctx.getImageData(x, y, 1, 1).data;
-            pixels.push(d[0], d[1], d[2]); // R, G, B
+            pixels.push(d[0], d[1], d[2]);
         }
     }
     return pixels;
 }
 
-// Returns fraction of sampled pixels that changed significantly
 function frameDiff(prev, curr) {
     if (!prev || prev.length !== curr.length) return 1;
     let changed = 0;
@@ -208,7 +279,7 @@ function frameDiff(prev, curr) {
         const dr = Math.abs(curr[i] - prev[i]);
         const dg = Math.abs(curr[i + 1] - prev[i + 1]);
         const db = Math.abs(curr[i + 2] - prev[i + 2]);
-        if (dr + dg + db > 30) changed++; // ~10/255 per channel
+        if (dr + dg + db > 30) changed++;
     }
     return changed / total;
 }
@@ -218,30 +289,60 @@ function frameDiff(prev, curr) {
 async function runCaptureLoop() {
     const settings = await getSettings();
     if (!settings.enabled) return;
-
     if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) return;
 
-    // Rate limit: don't call API more often than MIN_API_INTERVAL_MS
     const now = Date.now();
-    if (now - lastApiCallAt < MIN_API_INTERVAL_MS) return;
+    const cooldownOk = forceNextScan || (now - lastApiCallAt >= MIN_API_INTERVAL_MS);
+    if (!cooldownOk) return;
 
     let frame;
     try {
         frame = captureFrame(videoEl);
     } catch (e) {
-        return; // cross-origin or video not ready
+        return;
     }
 
-    // Visual diff: skip API call if frame hasn't changed enough
+    // Visual diff check (skip if same scene, unless forced)
     const currentPixels = samplePixels(frame.ctx, frame.canvas.width, frame.canvas.height);
     const diff = frameDiff(lastFramePixels, currentPixels);
-    if (diff < DIFF_THRESHOLD) return; // scene unchanged, skip
+    if (!forceNextScan && diff < DIFF_THRESHOLD) return;
 
     lastFramePixels = currentPixels;
     lastApiCallAt = now;
+    forceNextScan = false;
 
-    renderLoading(settings.condition);
+    // Show full loading only if nothing is displayed yet; otherwise scan silently
+    if (!hasCurrentResult) {
+        renderLoading(settings.condition);
+    } else {
+        showScanDot(true);
+    }
 
+    // ── Strategy 1: DOM listing extraction (no OCR cost) ──────────────────────
+    const listing = extractVoggtListing();
+    if (listing?.cardName && listing.cardName !== lastCardName) {
+        chrome.runtime.sendMessage(
+            {
+                type: 'CARDSCOPE_PRICE_ONLY',
+                cardName: listing.cardName,
+                condition: settings.condition,
+                serverUrl: settings.serverUrl,
+                secret: settings.secret,
+            },
+            (response) => {
+                if (chrome.runtime.lastError || !response || response.error) {
+                    // DOM extraction failed — fall through to OCR (will happen next tick)
+                    lastApiCallAt = 0;
+                    return;
+                }
+                lastCardName = listing.cardName;
+                renderResult({ detected: true, cardName: listing.cardName, ...response }, settings.condition);
+            }
+        );
+        return;
+    }
+
+    // ── Strategy 2: OCR via Claude Vision ────────────────────────────────────
     chrome.runtime.sendMessage(
         {
             type: 'CARDSCOPE_IDENTIFY',
@@ -252,18 +353,25 @@ async function runCaptureLoop() {
         },
         (response) => {
             if (chrome.runtime.lastError) {
-                renderError('Erreur de connexion au serveur');
+                renderError('Erreur connexion serveur');
                 return;
             }
             if (!response || response.error) {
-                renderError(response?.error || 'Erreur inconnue');
+                if (hasCurrentResult) showScanDot(false); // keep old result visible
+                else renderError(response?.error || 'Erreur inconnue');
                 return;
             }
-            if (response.cardName && response.cardName === lastCardName && response.cached) {
+            if (!response.detected) {
+                if (!hasCurrentResult) renderIdle(settings.condition);
+                else showScanDot(false); // keep old result
+                return;
+            }
+            if (response.cardName === lastCardName && response.cached) {
+                showScanDot(false);
                 return;
             }
             lastCardName = response.cardName || null;
-            renderResult(response, settings.condition, settings.nidThresholdPct);
+            renderResult(response, settings.condition);
         }
     );
 }
@@ -271,24 +379,19 @@ async function runCaptureLoop() {
 // ─── Voggt DOM trigger — detect new listing events ────────────────────────────
 
 function watchVoggtListings() {
-    // Reset the API cooldown when Voggt signals a new lot/listing
-    // Voggt uses React so we watch for DOM changes in the listing area
     const listingObserver = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node.nodeType !== 1) continue;
-                // Detect Voggt listing signals: price elements, lot numbers, countdown timers
-                const text = node.textContent || '';
                 const isListingChange =
                     node.querySelector?.('[class*="lot"]') ||
                     node.querySelector?.('[class*="price"]') ||
                     node.querySelector?.('[class*="timer"]') ||
                     node.querySelector?.('[class*="countdown"]') ||
                     node.querySelector?.('[class*="current"]') ||
-                    /^\d+[,.]?\d*\s*€/.test(text.trim()); // price pattern like "12,50 €"
+                    /^\d+[,.]?\d*\s*€/.test((node.textContent || '').trim());
 
                 if (isListingChange) {
-                    // New listing detected — force next capture to bypass cooldown
                     lastApiCallAt = 0;
                     lastFramePixels = null;
                     break;
@@ -296,16 +399,13 @@ function watchVoggtListings() {
             }
         }
     });
-
     listingObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 // ─── Video element discovery ──────────────────────────────────────────────────
 
 function findVideoElement() {
-    // Direct video element on the page
     const videos = Array.from(document.querySelectorAll('video'));
-    // Prefer the one that is playing and visible
     const playing = videos.find(
         (v) => !v.paused && v.videoWidth > 0 && v.offsetParent !== null
     );
@@ -358,7 +458,7 @@ const retryInterval = setInterval(() => {
     retries++;
 }, 2000);
 
-// Listen to settings changes (e.g. toggle enabled from popup)
+// Listen to settings changes
 chrome.storage.onChanged.addListener((changes) => {
     if (changes.enabled && !changes.enabled.newValue) {
         if (captureInterval) clearInterval(captureInterval);

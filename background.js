@@ -13,7 +13,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         handleIdentify(message).then(sendResponse).catch((err) => {
             sendResponse({ error: err.message || 'Erreur serveur' });
         });
-        return true; // keep message channel open for async response
+        return true;
+    }
+    if (message.type === 'CARDSCOPE_PRICE_ONLY') {
+        handlePriceOnly(message).then(sendResponse).catch((err) => {
+            sendResponse({ error: err.message || 'Erreur serveur' });
+        });
+        return true;
     }
 });
 
@@ -75,6 +81,30 @@ async function handleIdentify({ image, condition, serverUrl, secret }) {
     // Store in memory cache
     cardCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
 
+    return result;
+}
+
+// Direct price lookup — skips OCR when card name comes from Voggt's DOM
+async function handlePriceOnly({ cardName, condition, serverUrl, secret }) {
+    if (!secret || !serverUrl) return { error: 'Config manquante' };
+
+    const cacheKey = `dom:${cardName}:${condition}`.toLowerCase();
+    const cached = cardCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return { ...cached.result, cached: true };
+
+    const params = new URLSearchParams({ name: cardName, condition });
+    const priceData = await callServer(`${serverUrl}/price?${params}`, 'GET', secret);
+
+    const result = {
+        trendPrice: priceData.trendPrice,
+        lowPrice: priceData.lowPrice,
+        condition: priceData.condition,
+        currency: priceData.currency,
+        justtcgUrl: priceData.justtcgUrl,
+        set: priceData.setName,
+        cardNumber: priceData.cardNumber,
+    };
+    cardCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
     return result;
 }
 
