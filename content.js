@@ -92,7 +92,7 @@ function renderResult(data, condition, nidThresholdPct) {
         return;
     }
 
-    const { cardName, set, cardNumber, trendPrice, lowPrice, currency, cardmarketUrl } = data;
+    const { cardName, set, cardNumber, trendPrice, lowPrice, currency, justtcgUrl } = data;
     const symbol = currency === 'EUR' ? '€' : currency;
     const metaParts = [set, cardNumber ? `#${cardNumber}` : null].filter(Boolean);
 
@@ -120,7 +120,7 @@ function renderResult(data, condition, nidThresholdPct) {
             </div>
         </div>
         ${verdictHtml}
-        ${cardmarketUrl ? `<a class="cardscope-link" href="${cardmarketUrl}" target="_blank">Voir sur Cardmarket ↗</a>` : ''}
+        ${justtcgUrl ? `<a class="cardscope-link" href="${justtcgUrl}" target="_blank">Voir sur JustTCG ↗</a>` : ''}
         ` : `<div class="cardscope-idle">Prix non disponible</div>`}
     `;
 }
