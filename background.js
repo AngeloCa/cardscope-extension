@@ -69,7 +69,7 @@ async function handleIdentify({ image, condition, serverUrl, secret }) {
         lowPrice: priceData.lowPrice,
         condition: priceData.condition,
         currency: priceData.currency,
-        cardmarketUrl: priceData.cardmarketUrl,
+        justtcgUrl: priceData.justtcgUrl,
     };
 
     // Store in memory cache
