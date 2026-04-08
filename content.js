@@ -425,31 +425,6 @@ async function runCaptureLoop() {
     );
 }
 
-// ─── Voggt DOM trigger — detect new listing events ────────────────────────────
-
-function watchVoggtListings() {
-    const listingObserver = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType !== 1) continue;
-                const isListingChange =
-                    node.querySelector?.('[class*="lot"]') ||
-                    node.querySelector?.('[class*="price"]') ||
-                    node.querySelector?.('[class*="timer"]') ||
-                    node.querySelector?.('[class*="countdown"]') ||
-                    node.querySelector?.('[class*="current"]') ||
-                    /^\d+[,.]?\d*\s*€/.test((node.textContent || '').trim());
-
-                if (isListingChange) {
-                    lastApiCallAt = 0;
-                    lastFramePixels = null;
-                    break;
-                }
-            }
-        }
-    });
-    listingObserver.observe(document.body, { childList: true, subtree: true });
-}
 
 // ─── Video element discovery ──────────────────────────────────────────────────
 
@@ -477,35 +452,31 @@ function startCapture() {
 
 // ─── Observe DOM for video appearing (SPA navigation) ─────────────────────────
 
+let spaDebounce = null;
 const observer = new MutationObserver(() => {
-    if (!videoEl || !document.contains(videoEl)) {
+    if (videoEl && document.contains(videoEl)) return; // video still present, nothing to do
+    // Debounce: wait 1s of DOM stability before attempting to find the video
+    clearTimeout(spaDebounce);
+    spaDebounce = setTimeout(() => {
+        if (videoEl && document.contains(videoEl)) return;
         videoEl = null;
         if (captureInterval) {
             clearInterval(captureInterval);
             captureInterval = null;
         }
         startCapture();
-    }
+    }, 1000);
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Initial attempt
+// Initial attempt + periodic retry until video is found (max 30s)
 startCapture();
-
-// Watch Voggt DOM for new listing events
-watchVoggtListings();
-
-// Retry a few times in case the video loads after the script
-let retries = 0;
 const retryInterval = setInterval(() => {
-    if (videoEl || retries >= 10) {
-        clearInterval(retryInterval);
-        return;
-    }
+    if (videoEl) { clearInterval(retryInterval); return; }
     startCapture();
-    retries++;
-}, 2000);
+}, 3000);
+setTimeout(() => clearInterval(retryInterval), 30_000);
 
 // Listen to settings changes
 chrome.storage.onChanged.addListener((changes) => {
