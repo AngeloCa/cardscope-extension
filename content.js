@@ -510,6 +510,9 @@ const observer = new MutationObserver(() => {
 
 observer.observe(document.body, { childList: true, subtree: true });
 
+// Clear stale cache from previous lives on every page load
+chrome.runtime.sendMessage({ type: 'CARDSCOPE_CLEAR_CACHE' });
+
 // Initial attempt + periodic retry until video is found (max 30s)
 startCapture();
 const retryInterval = setInterval(() => {

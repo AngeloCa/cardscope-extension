@@ -27,6 +27,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         return true;
     }
+    if (message.type === 'CARDSCOPE_CLEAR_CACHE') {
+        cardCache.clear();
+        sendResponse({ ok: true });
+        return true;
+    }
 });
 
 async function handleIdentify({ image, condition, serverUrl, secret, force }) {
